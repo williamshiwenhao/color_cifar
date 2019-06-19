@@ -9,6 +9,7 @@ from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
+from visdom import Visdom
 import datetime
 import matplotlib
 matplotlib.use('AGG')
@@ -21,8 +22,8 @@ import os
 class Pix2Pix():
     def __init__(self):
         # Input shape
-        self.img_rows = 128
-        self.img_cols = 128
+        self.img_rows = 32
+        self.img_cols = 32
         self.channels = 3
         self.bw_shape = (self.img_rows, self.img_cols, 1)
         self.color_shape = (self.img_rows, self.img_cols, 3)
@@ -105,13 +106,14 @@ class Pix2Pix():
         d3 = conv2d(d2, self.gf*4)
         d4 = conv2d(d3, self.gf*8)
         d5 = conv2d(d4, self.gf*8)
-        d6 = conv2d(d5, self.gf*8)
-        d7 = conv2d(d6, self.gf*8)
+        # d6 = conv2d(d5, self.gf*8)
+        # d7 = conv2d(d6, self.gf*8)
 
         # Upsampling
-        u1 = deconv2d(d7, d6, self.gf*8)
-        u2 = deconv2d(u1, d5, self.gf*8)
-        u3 = deconv2d(u2, d4, self.gf*8)
+        # u1 = deconv2d(d7, d6, self.gf*8)
+        # u2 = deconv2d(u1, d5, self.gf*8)
+        # u3 = deconv2d(u2, d4, self.gf*8)
+        u3 = deconv2d(d5, d4, self.gf*8)
         u4 = deconv2d(u3, d3, self.gf*4)
         u5 = deconv2d(u4, d2, self.gf*2)
         u6 = deconv2d(u5, d1, self.gf)
@@ -148,6 +150,13 @@ class Pix2Pix():
 
     def train(self, epochs, batch_size=1, sample_interval=50):
 
+        vis = Visdom(env='my_wind')
+        x, y1, y2, y3 = 0, 0, 0, 0
+        D_losswin = vis.line(
+            X=np.array([x]),
+            Y=np.array([y1]),
+            opts=dict(showlegend=True)
+        )
         start_time = datetime.datetime.now()
 
         # Adversarial loss ground truths
@@ -177,6 +186,15 @@ class Pix2Pix():
                 g_loss = self.combined.train_on_batch([imgs_A, imgs_B], [valid, imgs_A])
 
                 elapsed_time = datetime.datetime.now() - start_time
+
+                x = epoch * batch_size + batch_i
+                y1 = d_loss[0]
+                vis.line(
+                    X=np.array([x]),
+                    Y=np.array([y1]),
+                    win=D_losswin,
+                    update='append'
+                )
                 # Plot the progress
                 print ("[Epoch %d/%d] [Batch %d/%d] [D loss: %f, acc: %3d%%] [G loss: %f] time: %s" % (epoch, epochs,
                                                                         batch_i, self.data_loader.n_batches,
@@ -215,4 +233,4 @@ class Pix2Pix():
 
 if __name__ == '__main__':
     gan = Pix2Pix()
-    gan.train(epochs=200, batch_size=1, sample_interval=200)
+    gan.train(epochs=20, batch_size=4, sample_interval=200)
