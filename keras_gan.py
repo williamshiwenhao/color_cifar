@@ -150,12 +150,22 @@ class Pix2Pix():
 
     def train(self, epochs, batch_size=1, sample_interval=50):
 
-        vis = Visdom(env='my_wind')
+        vis = Visdom()
         x, y1, y2, y3 = 0, 0, 0, 0
         D_losswin = vis.line(
             X=np.array([x]),
             Y=np.array([y1]),
-            opts=dict(showlegend=True)
+            opts=dict(title = 'D loss曲线',showlegend=True)
+        )
+        G_losswin = vis.line(
+            X=np.array([x]),
+            Y=np.array([y2]),
+            opts=dict(title = 'G loss曲线',showlegend=True)
+        )
+        Acc_win = vis.line(
+            X=np.array([x]),
+            Y=np.array([y3]),
+            opts=dict(title='acc准确率曲线', showlegend=True)
         )
         start_time = datetime.datetime.now()
 
@@ -187,14 +197,32 @@ class Pix2Pix():
 
                 elapsed_time = datetime.datetime.now() - start_time
 
-                x = epoch * batch_size + batch_i
-                y1 = d_loss[0]
-                vis.line(
-                    X=np.array([x]),
-                    Y=np.array([y1]),
-                    win=D_losswin,
-                    update='append'
-                )
+                x = epoch * self.data_loader.n_batches + batch_i
+                if x%10 == 0: #每10个batch画一个点
+                    #D loss曲线
+                    y1 = d_loss[0]
+                    vis.line(
+                        X=np.array([x]),
+                        Y=np.array([y1]),
+                        win=D_losswin,
+                        update='append'
+                    )
+                    #G loss曲线
+                    y2 = g_loss[0]
+                    vis.line(
+                        X=np.array([x]),
+                        Y=np.array([y2]),
+                        win=G_losswin,
+                        update='append'
+                    )
+                    #准确率曲线
+                    y3 = 100*d_loss[1]
+                    vis.line(
+                        X=np.array([x]),
+                        Y=np.array([y3]),
+                        win=Acc_win,
+                        update='append'
+                    )
                 # Plot the progress
                 print ("[Epoch %d/%d] [Batch %d/%d] [D loss: %f, acc: %3d%%] [G loss: %f] time: %s" % (epoch, epochs,
                                                                         batch_i, self.data_loader.n_batches,
@@ -233,4 +261,4 @@ class Pix2Pix():
 
 if __name__ == '__main__':
     gan = Pix2Pix()
-    gan.train(epochs=20, batch_size=4, sample_interval=200)
+    gan.train(epochs=20, batch_size=12, sample_interval=200)
