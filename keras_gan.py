@@ -18,9 +18,30 @@ import sys
 from data_loader import DataLoader
 import numpy as np
 import os
+import config
 
 class Pix2Pix():
     def __init__(self):
+        # ----------------------
+        # Show accuracy and loss
+        # ----------------------
+        self.__vis = Visdom()
+        x, y1, y2, y3 = 0, 0, 0, 0
+        self.__D_losswin = self.__vis.line(
+            X=np.array([x]),
+            Y=np.array([y1]),
+            opts=dict(title='D loss曲线', showlegend=True)
+        )
+        self.__G_losswin = self.__vis.line(
+            X=np.array([x]),
+            Y=np.array([y2]),
+            opts=dict(title='G loss曲线', showlegend=True)
+        )
+        self.__Acc_win = self.__vis.line(
+            X=np.array([x]),
+            Y=np.array([y3]),
+            opts=dict(title='acc准确率曲线', showlegend=True)
+        )
         # Input shape
         self.img_rows = 32
         self.img_cols = 32
@@ -144,29 +165,16 @@ class Pix2Pix():
         d3 = d_layer(d2, self.df*4)
         d4 = d_layer(d3, self.df*8)
 
-        validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
+        validity = Conv2D(1, kernel_size=4, strides=1, padding='same', activation='sigmoid')(d4)
 
         return Model([img_A, img_B], validity)
 
     def train(self, epochs, batch_size=1, sample_interval=50):
 
-        vis = Visdom()
-        x, y1, y2, y3 = 0, 0, 0, 0
-        D_losswin = vis.line(
-            X=np.array([x]),
-            Y=np.array([y1]),
-            opts=dict(title = 'D loss曲线',showlegend=True)
-        )
-        G_losswin = vis.line(
-            X=np.array([x]),
-            Y=np.array([y2]),
-            opts=dict(title = 'G loss曲线',showlegend=True)
-        )
-        Acc_win = vis.line(
-            X=np.array([x]),
-            Y=np.array([y3]),
-            opts=dict(title='acc准确率曲线', showlegend=True)
-        )
+        acc_queue = np.zeros(config.fifo_size, dtype=float)
+        acc_idx = 0
+        old_loss = [0.0, 0, 0]
+
         start_time = datetime.datetime.now()
 
         # Adversarial loss ground truths
@@ -179,14 +187,21 @@ class Pix2Pix():
                 # ---------------------
                 #  Train Discriminator
                 # ---------------------
-
-                # Condition on B and generate a translated version
                 fake_A = self.generator.predict(imgs_B)
-
-                # Train the discriminators (original images = real / generated = Fake)
-                d_loss_real = self.discriminator.train_on_batch([imgs_A, imgs_B], valid)
-                d_loss_fake = self.discriminator.train_on_batch([fake_A, imgs_B], fake)
-                d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+                avg_acc = np.average(acc_queue)
+                if avg_acc < config.acc_threshould:
+                    # Train the discriminators (original images = real / generated = Fake)
+                    d_loss_real = self.discriminator.train_on_batch([imgs_A, imgs_B], valid)
+                    d_loss_fake = self.discriminator.train_on_batch([fake_A, imgs_B], fake)
+                    d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+                    acc_queue[acc_idx] = d_loss[1]
+                    acc_idx = (acc_idx + 1) % config.fifo_size
+                else:
+                    real_loss = self.discriminator.test_on_batch([imgs_A, imgs_B], valid)
+                    fake_loss = self.discriminator.test_on_batch([fake_A, imgs_B], fake)
+                    d_loss = 0.5 * np.add(real_loss , fake_loss )
+                    acc_queue[acc_idx] = d_loss[1]
+                    acc_idx = (acc_idx + 1) % config.fifo_size
 
                 # -----------------
                 #  Train Generator
@@ -198,37 +213,42 @@ class Pix2Pix():
                 elapsed_time = datetime.datetime.now() - start_time
 
                 x = epoch * self.data_loader.n_batches + batch_i
-                if x%10 == 0: #每10个batch画一个点
-                    #D loss曲线
+                if x % 10 == 0:  # 每10个batch画一个点
+                    # D loss曲线
                     y1 = d_loss[0]
-                    vis.line(
+                    self.__vis.line(
                         X=np.array([x]),
                         Y=np.array([y1]),
-                        win=D_losswin,
+                        win=self.__D_losswin,
                         update='append'
                     )
-                    #G loss曲线
+                    # G loss曲线
                     y2 = g_loss[0]
-                    vis.line(
+                    self.__vis.line(
                         X=np.array([x]),
                         Y=np.array([y2]),
-                        win=G_losswin,
+                        win=self.__G_losswin,
                         update='append'
                     )
-                    #准确率曲线
-                    y3 = 100*d_loss[1]
-                    vis.line(
+                    # 准确率曲线
+                    y3 = 100 * d_loss[1]
+                    self.__vis.line(
                         X=np.array([x]),
                         Y=np.array([y3]),
-                        win=Acc_win,
+                        win=self.__Acc_win,
                         update='append'
                     )
+
                 # Plot the progress
-                print ("[Epoch %d/%d] [Batch %d/%d] [D loss: %f, acc: %3d%%] [G loss: %f] time: %s" % (epoch, epochs,
-                                                                        batch_i, self.data_loader.n_batches,
-                                                                        d_loss[0], 100*d_loss[1],
-                                                                        g_loss[0],
-                                                                        elapsed_time))
+                print("[Epoch %d/%d] [Batch %d/%d] [D loss: %f, acc: %3d%%, avg acc: %3d%%] [G loss: %f] time: %s"
+                      % (epoch, epochs,
+                         batch_i,
+                         self.data_loader.n_batches,
+                         d_loss[0],
+                         100 * d_loss[1],
+                         100 * np.average(acc_queue),
+                         g_loss[0],
+                         elapsed_time))
 
                 # If at save interval => save generated image samples
                 if batch_i % sample_interval == 0:

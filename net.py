@@ -4,11 +4,13 @@ import scipy
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
+from keras.activations import sigmoid
 from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model, load_model
 from keras.optimizers import Adam
+from datetime import datetime
+import time
 from visdom import Visdom
-import datetime
 import matplotlib
 
 matplotlib.use('AGG')
@@ -21,14 +23,6 @@ import config
 
 class Pix2Pix():
     def __init__(self):
-
-        # Configure data loader
-
-
-        # Calculate output shape of D (PatchGAN)
-        patch = int(config.img_rows / 2 ** 4)
-        self.disc_patch = (patch, patch, 1)
-
         # Number of filters in the first layer of G and D
         self.gf = 64
         self.df = 64
@@ -49,7 +43,7 @@ class Pix2Pix():
         # Build the generator
         self.generator = self.build_generator()
 
-        # Input images and their conditioning images
+        # Placehoders
         img_A = Input(shape=config.color_shape)
         img_B = Input(shape=config.bw_shape)
 
@@ -135,6 +129,13 @@ class Pix2Pix():
         d3 = d_layer(d2, self.df * 4)
         d4 = d_layer(d3, self.df * 8)
 
-        validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
+        validity = Conv2D(1, kernel_size=4, strides=1, padding='same', activation='sigmoid')(d4)
 
         return Model([img_A, img_B], validity)
+
+    def save(self, path):
+        savePath = path
+        self.combined.save(savePath)
+
+    def restore(self, file_path):
+        self.combined = load_model(file_path)
