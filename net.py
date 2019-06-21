@@ -4,13 +4,9 @@ import scipy
 from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D
 from keras.layers.advanced_activations import LeakyReLU
-from keras.activations import sigmoid
 from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Sequential, Model, load_model
+from keras.models import  Model, load_model
 from keras.optimizers import Adam
-from datetime import datetime
-import time
-from visdom import Visdom
 import matplotlib
 
 matplotlib.use('AGG')
@@ -36,8 +32,7 @@ class Pix2Pix():
                                    metrics=['accuracy'])
 
         # -------------------------
-        # Construct Computational
-        #   Graph of Generator
+        # Generator
         # -------------------------
 
         # Build the generator
@@ -82,7 +77,7 @@ class Pix2Pix():
             u = Concatenate()([u, skip_input])
             return u
 
-        # Image input
+        # PlaceHoder
         d0 = Input(shape=config.bw_shape)
 
         # Downsampling
@@ -91,14 +86,14 @@ class Pix2Pix():
         d3 = conv2d(d2, self.gf * 4)
         d4 = conv2d(d3, self.gf * 8)
         d5 = conv2d(d4, self.gf * 8)
-        # d6 = conv2d(d5, self.gf*8)
+        d6 = conv2d(d5, self.gf*8)
         # d7 = conv2d(d6, self.gf*8)
 
         # Upsampling
         # u1 = deconv2d(d7, d6, self.gf*8)
         # u2 = deconv2d(u1, d5, self.gf*8)
-        # u3 = deconv2d(u2, d4, self.gf*8)
-        u3 = deconv2d(d5, d4, self.gf * 8)
+        u2 = deconv2d(d6, d5, self.gf*8)
+        u3 = deconv2d(u2, d4, self.gf*8)
         u4 = deconv2d(u3, d3, self.gf * 4)
         u5 = deconv2d(u4, d2, self.gf * 2)
         u6 = deconv2d(u5, d1, self.gf)
@@ -121,7 +116,6 @@ class Pix2Pix():
         img_A = Input(shape=config.color_shape)
         img_B = Input(shape=config.bw_shape)
 
-        # Concatenate image and conditioning image by channels to produce input
         combined_imgs = Concatenate(axis=-1)([img_A, img_B])
 
         d1 = d_layer(combined_imgs, self.df, bn=False)
@@ -129,13 +123,12 @@ class Pix2Pix():
         d3 = d_layer(d2, self.df * 4)
         d4 = d_layer(d3, self.df * 8)
 
-        validity = Conv2D(1, kernel_size=4, strides=1, padding='same', activation='sigmoid')(d4)
+        validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 
         return Model([img_A, img_B], validity)
 
     def save(self, path):
-        savePath = path
-        self.combined.save(savePath)
+        self.generator.save(path)
 
     def restore(self, file_path):
-        self.combined = load_model(file_path)
+        self.generator = load_model(file_path)

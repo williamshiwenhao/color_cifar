@@ -65,21 +65,12 @@ class Train():
                 #  Train Discriminator
                 # ---------------------
                 fake_A = self.model.generator.predict(imgs_B)
-                avg_acc = np.average(acc_queue)
-                if avg_acc < config.acc_threshould:
-                    # Train the discriminators (original images = real / generated = Fake)
-                    d_loss_real = self.model.discriminator.train_on_batch([imgs_A, imgs_B], valid)
-                    d_loss_fake = self.model.discriminator.train_on_batch([fake_A, imgs_B], fake)
-                    d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-                    acc_queue[acc_idx] = d_loss[1]
-                    acc_idx = (acc_idx + 1) % config.fifo_size
-                    old_loss = d_loss
-                else:
-                    _,real_acc = self.model.discriminator.test_on_batch([imgs_A, imgs_B], valid)
-                    _,fake_acc = self.model.discriminator.test_on_batch([fake_A, imgs_B], fake)
-                    acc_queue[acc_idx] = 0.5 * (fake_acc + real_acc )
-                    old_loss[1] = acc_queue[acc_idx]
-                    acc_idx = (acc_idx + 1) % config.fifo_size
+                d_loss_real = self.model.discriminator.train_on_batch([imgs_A, imgs_B], valid)
+                d_loss_fake = self.model.discriminator.train_on_batch([fake_A, imgs_B], fake)
+                d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+                acc_queue[acc_idx] = d_loss[1]
+                acc_idx = (acc_idx + 1) % config.fifo_size
+                old_loss = d_loss
 
                 d_loss = old_loss
                 # -----------------
@@ -146,7 +137,7 @@ class Train():
         # Rescale images 0 - 1
         gen_imgs = 0.5 * gen_imgs + 0.5
 
-        titles = ['Condition', 'Generated', 'Original']
+        titles = ['Gray', 'Generated', 'Original']
         fig, axs = plt.subplots(r, c)
         cnt = 0
         for i in range(r):

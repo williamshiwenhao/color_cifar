@@ -1,4 +1,6 @@
 from __future__ import print_function, division
+from skimage.measure import compare_ssim
+from PIL import Image
 import scipy
 import tensorflow as tf
 from keras.datasets import mnist
@@ -19,6 +21,7 @@ from data_loader import DataLoader
 import numpy as np
 import os
 import config
+import cv2
 
 class Pix2Pix():
     def __init__(self):
@@ -26,7 +29,7 @@ class Pix2Pix():
         # Show accuracy and loss
         # ----------------------
         self.__vis = Visdom()
-        x, y1, y2, y3 = 0, 0, 0, 0
+        x, y1, y2, y3, y4, y5 = 0, 0, 0, 0, 0, 0
         self.__D_losswin = self.__vis.line(
             X=np.array([x]),
             Y=np.array([y1]),
@@ -42,9 +45,15 @@ class Pix2Pix():
             Y=np.array([y3]),
             opts=dict(title='acc准确率曲线', showlegend=True)
         )
+        self.__similar_win = self.__vis.line(
+            X=np.array([x]),
+            Y=np.array([y4]),
+            opts=dict(title='ssim相似度曲线', showlegend=True)
+        )
+
         # Input shape
-        self.img_rows = 32
-        self.img_cols = 32
+        self.img_rows = 64
+        self.img_cols = 64
         self.channels = 3
         self.bw_shape = (self.img_rows, self.img_cols, 1)
         self.color_shape = (self.img_rows, self.img_cols, 3)
@@ -127,14 +136,14 @@ class Pix2Pix():
         d3 = conv2d(d2, self.gf*4)
         d4 = conv2d(d3, self.gf*8)
         d5 = conv2d(d4, self.gf*8)
-        # d6 = conv2d(d5, self.gf*8)
+        d6 = conv2d(d5, self.gf*8)
         # d7 = conv2d(d6, self.gf*8)
 
         # Upsampling
         # u1 = deconv2d(d7, d6, self.gf*8)
         # u2 = deconv2d(u1, d5, self.gf*8)
-        # u3 = deconv2d(u2, d4, self.gf*8)
-        u3 = deconv2d(d5, d4, self.gf*8)
+        u2 = deconv2d(d6, d5, self.gf*8)
+        u3 = deconv2d(u2, d4, self.gf*8)
         u4 = deconv2d(u3, d3, self.gf*4)
         u5 = deconv2d(u4, d2, self.gf*2)
         u6 = deconv2d(u5, d1, self.gf)
@@ -165,7 +174,7 @@ class Pix2Pix():
         d3 = d_layer(d2, self.df*4)
         d4 = d_layer(d3, self.df*8)
 
-        validity = Conv2D(1, kernel_size=4, strides=1, padding='same', activation='sigmoid')(d4)
+        validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 
         return Model([img_A, img_B], validity)
 
@@ -188,20 +197,12 @@ class Pix2Pix():
                 #  Train Discriminator
                 # ---------------------
                 fake_A = self.generator.predict(imgs_B)
-                avg_acc = np.average(acc_queue)
-                if avg_acc < config.acc_threshould:
-                    # Train the discriminators (original images = real / generated = Fake)
-                    d_loss_real = self.discriminator.train_on_batch([imgs_A, imgs_B], valid)
-                    d_loss_fake = self.discriminator.train_on_batch([fake_A, imgs_B], fake)
-                    d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-                    acc_queue[acc_idx] = d_loss[1]
-                    acc_idx = (acc_idx + 1) % config.fifo_size
-                else:
-                    real_loss = self.discriminator.test_on_batch([imgs_A, imgs_B], valid)
-                    fake_loss = self.discriminator.test_on_batch([fake_A, imgs_B], fake)
-                    d_loss = 0.5 * np.add(real_loss , fake_loss )
-                    acc_queue[acc_idx] = d_loss[1]
-                    acc_idx = (acc_idx + 1) % config.fifo_size
+                # Train the discriminators (original images = real / generated = Fake)
+                d_loss_real = self.discriminator.train_on_batch([imgs_A, imgs_B], valid)
+                d_loss_fake = self.discriminator.train_on_batch([fake_A, imgs_B], fake)
+                d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+                acc_queue[acc_idx] = d_loss[1]
+                acc_idx = (acc_idx + 1) % config.fifo_size
 
                 # -----------------
                 #  Train Generator
@@ -253,6 +254,7 @@ class Pix2Pix():
                 # If at save interval => save generated image samples
                 if batch_i % sample_interval == 0:
                     self.sample_images(epoch, batch_i)
+                    self.save(config.model_path)
 
     def sample_images(self, epoch, batch_i):
         os.makedirs('images/%s' % self.dataset_name, exist_ok=True)
@@ -262,6 +264,17 @@ class Pix2Pix():
         fake_A = self.generator.predict(imgs_B)
         imgs_B = imgs_B.repeat(3, -1)
         gen_imgs = np.concatenate([imgs_B, fake_A, imgs_A])
+
+        # 比较fake_A 和imgs_A的相似性
+        ssim = compare_ssim(imgs_A[0], fake_A[0], multichannel=True)
+        x = epoch * self.data_loader.n_batches + batch_i
+        y4 = ssim
+        self.__vis.line(
+            X=np.array([x]),
+            Y=np.array([y4]),
+            win=self.__similar_win,
+            update='append'
+        )
 
         # Rescale images 0 - 1
         gen_imgs = 0.5 * gen_imgs + 0.5
@@ -278,6 +291,9 @@ class Pix2Pix():
         fig.savefig("images/%s/%d_%d.png" % (self.dataset_name, epoch, batch_i))
         plt.close()
 
+    def save(self, path):
+        savePath = path
+        self.generator.save(savePath)
 
 if __name__ == '__main__':
     gan = Pix2Pix()
