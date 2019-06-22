@@ -81,22 +81,22 @@ class Pix2Pix():
         d0 = Input(shape=config.bw_shape)
 
         # Downsampling
-        d1 = conv2d(d0, self.gf, bn=False)
-        d2 = conv2d(d1, self.gf * 2)
-        d3 = conv2d(d2, self.gf * 4)
-        d4 = conv2d(d3, self.gf * 8)
-        d5 = conv2d(d4, self.gf * 8)
-        d6 = conv2d(d5, self.gf*8)
+        d1 = conv2d(d0, self.gf, bn=False)#64x64x1-->32x32x64
+        d2 = conv2d(d1, self.gf * 2)#32x32x64-->16x16x128
+        d3 = conv2d(d2, self.gf * 4)#16x16x128-->8x8x256
+        d4 = conv2d(d3, self.gf * 8)#8x8x256-->4x4x512
+        d5 = conv2d(d4, self.gf * 8)#4x4x512-->2x2x512
+        d6 = conv2d(d5, self.gf*8)#2x2x512-->1x1x512
         # d7 = conv2d(d6, self.gf*8)
 
         # Upsampling
         # u1 = deconv2d(d7, d6, self.gf*8)
         # u2 = deconv2d(u1, d5, self.gf*8)
-        u2 = deconv2d(d6, d5, self.gf*8)
-        u3 = deconv2d(u2, d4, self.gf*8)
-        u4 = deconv2d(u3, d3, self.gf * 4)
-        u5 = deconv2d(u4, d2, self.gf * 2)
-        u6 = deconv2d(u5, d1, self.gf)
+        u2 = deconv2d(d6, d5, self.gf*8)#1x1x512-->2x2x1024
+        u3 = deconv2d(u2, d4, self.gf*8)#2x2x1024-->4x4x1024
+        u4 = deconv2d(u3, d3, self.gf * 4)#4x4x1024-->8x8x512
+        u5 = deconv2d(u4, d2, self.gf * 2)#8x8x512-->16x16x256
+        u6 = deconv2d(u5, d1, self.gf)#16x16x256-->32x32x128
 
         u7 = UpSampling2D(size=2)(u6)
         output_img = Conv2D(config.channels, kernel_size=4, strides=1, padding='same', activation='tanh')(u7)
